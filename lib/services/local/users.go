@@ -266,6 +266,9 @@ func (s *IdentityService) IncreaseLoginAttempts2(user string) error {
 	// "create val" will create a new login attempt counter
 	if len(data) == 0 {
 		err = s.backend.CreateVal(bucket, "lock", newData, s.lockDuration)
+		if trace.IsAlreadyExists(err) {
+			return nil
+		}
 		return trace.Wrap(err)
 	}
 	// we are going to increase the counter assuming the previous value has not changed
