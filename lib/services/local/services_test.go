@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/gravitational/teleport/lib/backend/boltbk"
+	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/services/suite"
 	"github.com/gravitational/teleport/lib/utils"
 
@@ -31,9 +32,10 @@ import (
 func TestServices(t *testing.T) { TestingT(t) }
 
 type BoltSuite struct {
-	bk    *boltbk.BoltBackend
-	suite *suite.ServicesTestSuite
-	dir   string
+	bk       *boltbk.BoltBackend
+	suite    *suite.ServicesTestSuite
+	identity *IdentityService
+	dir      string
 }
 
 var _ = Suite(&BoltSuite{})
@@ -54,7 +56,8 @@ func (s *BoltSuite) SetUpTest(c *C) {
 	suite.LockS = NewLockService(s.bk)
 	suite.PresenceS = NewPresenceService(s.bk)
 	suite.ProvisioningS = NewProvisioningService(s.bk)
-	suite.WebS = NewIdentityService(s.bk, 10, time.Duration(time.Hour))
+	s.identity = NewIdentityService(s.bk, 10, time.Duration(time.Hour))
+	suite.WebS = s.identity
 	suite.ChangesC = make(chan interface{})
 	s.suite = suite
 }
@@ -105,4 +108,12 @@ func (s *BoltSuite) TestToken(c *C) {
 
 func (s *BoltSuite) TestU2FCRUD(c *C) {
 	s.suite.U2FCRUD(c)
+}
+
+func (s *BoltSuite) TestIncreaseLoginAttempts(c *C) {
+	user := &services.TeleportUser{Name: "user1", AllowedLogins: []string{"admin", "root"}}
+	c.Assert(s.identity.UpsertUser(user), IsNil)
+
+	err := s.identity.IncreaseLoginAttempts(user.Name)
+	c.Assert(err, IsNil)
 }

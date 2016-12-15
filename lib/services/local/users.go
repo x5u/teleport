@@ -17,12 +17,12 @@ limitations under the License.
 package local
 
 import (
-	"crypto/x509"
 	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
-	"errors"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/gravitational/teleport/lib/backend"
@@ -237,7 +237,38 @@ func (s *IdentityService) IncreaseLoginAttempts(user string) error {
 	// do nothing if it's already there.
 	//
 	// "compare and swap" will bump the counter +1
+	fmt.Printf("here; %#v %#v\n", data, newData)
 	s.backend.CreateVal(bucket, "lock", data, s.lockDuration)
+	newdata, _, err := s.backend.GetValAndTTL(bucket, "lock")
+	fmt.Printf("after create: %#v\n", newdata)
+	_, err = s.backend.CompareAndSwap(bucket, "lock", newData, s.lockDuration, data)
+	fmt.Printf("here; %#v %#v %v\n", data, newData, err)
+	return trace.Wrap(err)
+}
+
+// IncreaseLoginAttempts bumps "login attempt" counter for the given user. If the counter
+// reaches 'lockAfter' value, it locks the account and returns access denied error.
+func (s *IdentityService) IncreaseLoginAttempts2(user string) error {
+	bucket := []string{"web", "users", user}
+
+	data, _, err := s.backend.GetValAndTTL(bucket, "lock")
+	// unexpected error?
+	if err != nil && !trace.IsNotFound(err) {
+		return trace.Wrap(err)
+	}
+	newData := []byte{0}
+	copy(newData, data)
+	// check the attempt count
+	if newData[0] >= s.lockAfter {
+		return trace.AccessDenied("this account has been locked for %v", s.lockDuration)
+	}
+	newData[0] += 1
+	// "create val" will create a new login attempt counter
+	if len(data) == 0 {
+		err = s.backend.CreateVal(bucket, "lock", newData, s.lockDuration)
+		return trace.Wrap(err)
+	}
+	// we are going to increase the counter assuming the previous value has not changed
 	_, err = s.backend.CompareAndSwap(bucket, "lock", newData, s.lockDuration, data)
 	return trace.Wrap(err)
 }
@@ -452,8 +483,8 @@ func (s *IdentityService) GetU2FRegisterChallenge(token string) (*u2f.Challenge,
 
 // u2f.Registration cannot be json marshalled due to the pointer in the public key so we have this marshallable version
 type MarshallableU2FRegistration struct {
-	Raw []byte `json:"raw"`
-	KeyHandle []byte `json:"keyhandle"`
+	Raw              []byte `json:"raw"`
+	KeyHandle        []byte `json:"keyhandle"`
 	MarshalledPubKey []byte `json:"marshalled_pubkey"`
 
 	// AttestationCert is not needed for authentication so we don't need to store it
@@ -466,8 +497,8 @@ func (s *IdentityService) UpsertU2FRegistration(user string, u2fReg *u2f.Registr
 	}
 
 	marshallableReg := MarshallableU2FRegistration{
-		Raw: u2fReg.Raw,
-		KeyHandle: u2fReg.KeyHandle,
+		Raw:              u2fReg.Raw,
+		KeyHandle:        u2fReg.KeyHandle,
 		MarshalledPubKey: marshalledPubkey,
 	}
 
@@ -506,9 +537,9 @@ func (s *IdentityService) GetU2FRegistration(user string) (*u2f.Registration, er
 	}
 
 	return &u2f.Registration{
-		Raw: marshallableReg.Raw,
-		KeyHandle: marshallableReg.KeyHandle,
-		PubKey: *pubkey,
+		Raw:             marshallableReg.Raw,
+		KeyHandle:       marshallableReg.KeyHandle,
+		PubKey:          *pubkey,
 		AttestationCert: nil,
 	}, nil
 }
