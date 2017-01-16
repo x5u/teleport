@@ -796,26 +796,23 @@ func (process *TeleportProcess) initProxyEndpoint(conn *Connector) error {
 
 // initAuthStorage initializes the storage backend for the auth. service
 func (process *TeleportProcess) initAuthStorage() (bk backend.Backend, err error) {
-	bkConf := &process.Config.Auth.KeysBackend
-
-	// pass 'data_dir' setting to a backend:
-	bkConf.BackendConf.Params["data_dir"] = process.Config.DataDir
+	bkConf := &process.Config.Auth.StorageConfig
 
 	switch bkConf.Type {
 	// legacy bolt backend:
 	case boltbk.GetName():
-		bk, err = boltbk.New(bkConf.BackendConf.Params)
+		bk, err = boltbk.New(bkConf.Params)
 	// filesystem backend:
 	case dir.GetName():
-		bk, err = dir.New(bkConf.BackendConf.Params)
+		bk, err = dir.New(bkConf.Params)
 	// DynamoDB bakcend:
 	case dynamo.GetName():
-		bk, err = dynamo.New(bkConf.BackendConf.Params)
+		bk, err = dynamo.New(bkConf.Params)
 	// etcd backend:
 	case etcdbk.GetName():
-		bk, err = etcdbk.New(bkConf.BackendConf.Params)
+		bk, err = etcdbk.New(bkConf.Params)
 	default:
-		err = trace.Errorf("unsupported backend type: %v", bkConf.Type)
+		err = trace.Errorf("unsupported secrets storage type: '%v'", bkConf.Type)
 	}
 	if err != nil {
 		return nil, trace.Wrap(err)
